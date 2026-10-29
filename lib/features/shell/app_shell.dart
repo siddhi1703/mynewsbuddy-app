@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../core/live_data_service.dart';
+import '../chat/chat_page.dart';
 
 class AppShell extends StatefulWidget {
   const AppShell({
@@ -29,12 +30,7 @@ class _AppShellState extends State<AppShell> {
         isDemoMode: widget.isDemoMode,
         openChat: () => setState(() => _index = 1),
       ),
-      const MigrationPage(
-        icon: Icons.forum_rounded,
-        title: 'AI Chat',
-        description:
-            'The Swift RAG flow will be ported here next: routing, trusted-source retrieval, Gemini answers, citations, and information-gap saving.',
-      ),
+      ChatPage(isDemoMode: widget.isDemoMode),
       const MigrationPage(
         icon: Icons.map_rounded,
         title: 'Map',
