@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import 'chat_history_service.dart';
 import 'chat_service.dart';
 
 class ChatPage extends StatefulWidget {
@@ -12,20 +13,24 @@ class ChatPage extends StatefulWidget {
   State<ChatPage> createState() => _ChatPageState();
 }
 
+ChatMessage _welcomeMessage() => ChatMessage.assistant(
+  text:
+      "Hi! I'm your Boston local companion. Ask me about the weather or "
+      'MBTA subway service, and I\'ll answer from live, trusted sources — '
+      "and tell you honestly when I don't have an answer.",
+  status: 'conversational',
+);
+
 class _ChatPageState extends State<ChatPage> {
   final _service = ChatService();
+  final _history = ChatHistoryService();
   final _controller = TextEditingController();
   final _scroll = ScrollController();
-  final List<ChatMessage> _messages = [
-    ChatMessage.assistant(
-      text:
-          "Hi! I'm your Boston local companion. Ask me about the weather or "
-          'MBTA subway service, and I\'ll answer from live, trusted sources — '
-          "and tell you honestly when I don't have an answer.",
-      status: 'conversational',
-    ),
-  ];
+  final List<ChatMessage> _messages = [_welcomeMessage()];
   bool _sending = false;
+  String? _conversationId;
+
+  bool get _historyEnabled => !widget.isDemoMode && _history.isSignedIn;
 
   @override
   void dispose() {
@@ -48,6 +53,15 @@ class _ChatPageState extends State<ChatPage> {
     });
     _scrollToEnd();
 
+    // Persist the user turn (creates a conversation on the first message).
+    if (_historyEnabled) {
+      try {
+        _conversationId = await _history.saveUserMessage(_conversationId, text);
+      } catch (_) {
+        /* history is best-effort; never block the chat */
+      }
+    }
+
     final reply = await _service.send(text, history);
     if (!mounted) return;
     setState(() {
@@ -55,6 +69,61 @@ class _ChatPageState extends State<ChatPage> {
       _sending = false;
     });
     _scrollToEnd();
+
+    if (_historyEnabled) {
+      if (ChatHistoryService.shouldPersist(reply) && _conversationId != null) {
+        try {
+          await _history.saveAssistantMessage(_conversationId!, reply);
+        } catch (_) {}
+      }
+      // Log a backend-confirmed gap and request notification when a journalist
+      // publishes an answer.
+      if (reply.savedForJournalist) {
+        try {
+          await _history.logInformationGap(
+            question: text,
+            location: reply.location ?? 'Boston, MA',
+            notify: true,
+          );
+        } catch (_) {}
+      }
+    }
+  }
+
+  void _newChat() {
+    setState(() {
+      _messages
+        ..clear()
+        ..add(_welcomeMessage());
+      _conversationId = null;
+    });
+  }
+
+  Future<void> _openHistory() async {
+    if (!_historyEnabled) return;
+    final selected = await showModalBottomSheet<ChatConversation>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => _HistorySheet(service: _history),
+    );
+    if (selected == null || !mounted) return;
+    try {
+      final loaded = await _history.messages(selected.id);
+      if (!mounted) return;
+      setState(() {
+        _messages
+          ..clear()
+          ..addAll(loaded.isEmpty ? [_welcomeMessage()] : loaded);
+        _conversationId = selected.id;
+      });
+      _scrollToEnd();
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not open that conversation.')),
+        );
+      }
+    }
   }
 
   void _scrollToEnd() {
@@ -74,7 +143,10 @@ class _ChatPageState extends State<ChatPage> {
     return SafeArea(
       child: Column(
         children: [
-          const _ChatHeader(),
+          _ChatHeader(
+            onNewChat: _newChat,
+            onHistory: _historyEnabled ? _openHistory : null,
+          ),
           if (widget.isDemoMode) const _DemoNotice(),
           Expanded(
             child: ListView.builder(
@@ -101,12 +173,15 @@ class _ChatPageState extends State<ChatPage> {
 }
 
 class _ChatHeader extends StatelessWidget {
-  const _ChatHeader();
+  const _ChatHeader({required this.onNewChat, this.onHistory});
+
+  final VoidCallback onNewChat;
+  final VoidCallback? onHistory;
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(18, 14, 18, 6),
+      padding: const EdgeInsets.fromLTRB(18, 14, 8, 6),
       child: Row(
         children: [
           const CircleAvatar(
@@ -115,18 +190,111 @@ class _ChatHeader extends StatelessWidget {
             child: Icon(Icons.auto_awesome_rounded),
           ),
           const SizedBox(width: 12),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'AI Local Companion',
-                style: Theme.of(context).textTheme.titleLarge,
-              ),
-              const Text(
-                'Grounded in live weather & MBTA data',
-                style: TextStyle(color: Color(0xFF60719B)),
-              ),
-            ],
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'AI Local Companion',
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+                const Text(
+                  'Grounded in live weather & MBTA data',
+                  style: TextStyle(color: Color(0xFF60719B)),
+                ),
+              ],
+            ),
+          ),
+          if (onHistory != null)
+            IconButton(
+              onPressed: onHistory,
+              tooltip: 'Chat history',
+              icon: const Icon(Icons.history_rounded),
+            ),
+          IconButton(
+            onPressed: onNewChat,
+            tooltip: 'New chat',
+            icon: const Icon(Icons.edit_square),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _HistorySheet extends StatefulWidget {
+  const _HistorySheet({required this.service});
+  final ChatHistoryService service;
+
+  @override
+  State<_HistorySheet> createState() => _HistorySheetState();
+}
+
+class _HistorySheetState extends State<_HistorySheet> {
+  late Future<List<ChatConversation>> _future;
+
+  @override
+  void initState() {
+    super.initState();
+    _future = widget.service.conversations();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: MediaQuery.of(context).size.height * 0.6,
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Text(
+              'Chat history',
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
+          ),
+          Expanded(
+            child: FutureBuilder<List<ChatConversation>>(
+              future: _future,
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                final items = snapshot.data ?? const [];
+                if (items.isEmpty) {
+                  return const Center(
+                    child: Padding(
+                      padding: EdgeInsets.all(24),
+                      child: Text('No saved conversations yet.'),
+                    ),
+                  );
+                }
+                return ListView.builder(
+                  itemCount: items.length,
+                  itemBuilder: (context, index) {
+                    final conversation = items[index];
+                    return ListTile(
+                      leading: const Icon(Icons.forum_rounded),
+                      title: Text(
+                        conversation.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      trailing: IconButton(
+                        icon: const Icon(Icons.delete_outline_rounded),
+                        onPressed: () async {
+                          await widget.service
+                              .deleteConversation(conversation.id);
+                          setState(() {
+                            _future = widget.service.conversations();
+                          });
+                        },
+                      ),
+                      onTap: () => Navigator.of(context).pop(conversation),
+                    );
+                  },
+                );
+              },
+            ),
           ),
         ],
       ),

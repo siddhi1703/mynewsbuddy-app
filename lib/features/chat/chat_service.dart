@@ -11,13 +11,15 @@ class ChatMessage {
     : role = 'user',
       status = null,
       citations = const [],
-      savedForJournalist = false;
+      savedForJournalist = false,
+      location = null;
 
   ChatMessage.assistant({
     required this.text,
     this.status,
     this.citations = const [],
     this.savedForJournalist = false,
+    this.location,
   }) : role = 'assistant';
 
   final String role; // 'user' | 'assistant'
@@ -25,6 +27,7 @@ class ChatMessage {
   final String? status; // answered, abstained, out_of_scope, ...
   final List<Citation> citations;
   final bool savedForJournalist;
+  final String? location; // resolved location, used when logging a gap
 }
 
 class Citation {
@@ -231,6 +234,7 @@ class ChatService {
         status: json['status'] as String?,
         citations: citations,
         savedForJournalist: json['save_for_journalist'] == true,
+        location: location,
       );
     } catch (_) {
       return ChatMessage.assistant(

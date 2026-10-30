@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 
 import '../../core/live_data_service.dart';
 import '../chat/chat_page.dart';
+import '../journalist/journalist_inbox_page.dart';
+import '../journalist/journalist_service.dart';
+import '../journalist/notifications_page.dart';
 
 class AppShell extends StatefulWidget {
   const AppShell({
@@ -521,16 +524,40 @@ class ProfilePage extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 16),
-          const Card(
-            child: ListTile(
-              leading: Icon(Icons.assignment_turned_in_rounded),
-              title: Text('Journalist Inbox'),
-              subtitle: Text(
-                'Planned after the authenticated RAG chat migration',
+          if (!isDemoMode)
+            Card(
+              child: ListTile(
+                leading: const Icon(Icons.mark_email_unread_rounded),
+                title: const Text('Your updates'),
+                subtitle: const Text(
+                  'Journalist answers to questions you saved for review',
+                ),
+                trailing: const Icon(Icons.chevron_right_rounded),
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => const NotificationsPage(),
+                  ),
+                ),
               ),
-              trailing: _Tag(label: 'PLANNED', dark: true),
             ),
-          ),
+          if (!isDemoMode && JournalistService().isJournalist) ...[
+            const SizedBox(height: 12),
+            Card(
+              child: ListTile(
+                leading: const Icon(Icons.assignment_turned_in_rounded),
+                title: const Text('Journalist Inbox'),
+                subtitle: const Text(
+                  'Clustered community information gaps to report on',
+                ),
+                trailing: const Icon(Icons.chevron_right_rounded),
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => const JournalistInboxPage(),
+                  ),
+                ),
+              ),
+            ),
+          ],
           const SizedBox(height: 24),
           OutlinedButton.icon(
             onPressed: onSignOut,
