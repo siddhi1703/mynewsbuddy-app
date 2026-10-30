@@ -89,13 +89,56 @@ class LiveDataService {
       final windKmh =
           (properties['windSpeed'] as Map<String, dynamic>)['value'] as num?;
 
+      var temperatureF =
+          temperatureC == null ? null : (temperatureC * 9 / 5 + 32).round();
+      var condition = properties['textDescription'] as String?;
+
+      // The latest station observation sometimes has a null temperature. Fall
+      // back to the current forecast period so the card still shows a reading
+      // instead of reporting "not connected".
+      if (temperatureF == null || condition == null || condition.isEmpty) {
+        final fallback = await _loadForecastFallback(point);
+        temperatureF ??= fallback?.temperatureF;
+        if (condition == null || condition.isEmpty) {
+          condition = fallback?.condition;
+        }
+      }
+
       return _WeatherResult(
-        temperatureF: temperatureC == null
-            ? null
-            : (temperatureC * 9 / 5 + 32).round(),
-        condition: properties['textDescription'] as String?,
+        temperatureF: temperatureF,
+        condition: condition,
         windMph: windKmh == null ? null : (windKmh * 0.621371).round(),
         updatedAt: DateTime.tryParse(properties['timestamp'] as String? ?? ''),
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<_WeatherResult?> _loadForecastFallback(
+    Map<String, dynamic> point,
+  ) async {
+    try {
+      final forecastUrl =
+          (point['properties'] as Map<String, dynamic>)['forecast'] as String?;
+      if (forecastUrl == null) return null;
+      final response = await http
+          .get(Uri.parse(forecastUrl), headers: _headers)
+          .timeout(const Duration(seconds: 15));
+      if (response.statusCode != 200) return null;
+      final periods =
+          ((jsonDecode(response.body) as Map<String, dynamic>)['properties']
+                  as Map<String, dynamic>?)?['periods']
+              as List<dynamic>?;
+      if (periods == null || periods.isEmpty) return null;
+      final current = periods.first as Map<String, dynamic>;
+      // Forecast temperature is already in the unit given by temperatureUnit
+      // (Fahrenheit for US NWS forecasts).
+      return _WeatherResult(
+        temperatureF: (current['temperature'] as num?)?.round(),
+        condition: current['shortForecast'] as String?,
+        windMph: null,
+        updatedAt: null,
       );
     } catch (_) {
       return null;

@@ -364,7 +364,12 @@ class _WeatherCard extends StatelessWidget {
                       ],
                     ),
                   ),
-                  const Text('☁️', style: TextStyle(fontSize: 48)),
+                  Image.asset(
+                    _mascotAsset(data?.condition),
+                    width: 78,
+                    height: 78,
+                    fit: BoxFit.contain,
+                  ),
                 ],
               ),
             const SizedBox(height: 22),
@@ -391,6 +396,34 @@ class _WeatherCard extends StatelessWidget {
     if (hour < 12) return 'morning';
     if (hour < 17) return 'afternoon';
     return 'evening';
+  }
+
+  // Pick the weather companion mascot from the current condition and time.
+  static String _mascotAsset(String? condition) {
+    final hour = DateTime.now().hour;
+    final isNight = hour < 6 || hour >= 20;
+    final c = (condition ?? '').toLowerCase();
+    if (c.contains('thunder') || c.contains('storm')) {
+      return 'assets/images/WeatherMascotStormy.png';
+    }
+    if (c.contains('snow') ||
+        c.contains('sleet') ||
+        c.contains('ice') ||
+        c.contains('flurr')) {
+      return 'assets/images/WeatherMascotSnowy.png';
+    }
+    if (c.contains('rain') || c.contains('shower') || c.contains('drizzle')) {
+      return 'assets/images/WeatherMascotRainy.png';
+    }
+    if (isNight) return 'assets/images/WeatherMascotNight.png';
+    if (c.contains('cloud') ||
+        c.contains('overcast') ||
+        c.contains('fog') ||
+        c.contains('haze') ||
+        c.contains('mist')) {
+      return 'assets/images/WeatherMascotCloudy.png';
+    }
+    return 'assets/images/WeatherMascotSunny.png';
   }
 }
 
