@@ -1,7 +1,11 @@
 abstract final class AppConfig {
-  static const supabaseUrl = String.fromEnvironment('SUPABASE_URL');
+  static const supabaseUrl = String.fromEnvironment(
+    'SUPABASE_URL',
+    defaultValue: 'https://obawlegdziadnteiizcb.supabase.co',
+  );
   static const supabasePublishableKey = String.fromEnvironment(
     'SUPABASE_PUBLISHABLE_KEY',
+    defaultValue: 'sb_publishable_79BWAGgMxRFLUROIrjZ9Wg_dWUzm1w9',
   );
   static const backendBaseUrl = String.fromEnvironment(
     'BACKEND_BASE_URL',
